@@ -1,8 +1,76 @@
-version: '3'
+version: "3"
 services:
-  magic:
+  db_analytics:
+    image: postgres:14
+    restart: on-failure
+    container_name: ${PROJECT_NAME}-postgres-analytics
+    env_file:
+      - .env
+    environment:
+      POSTGRES_DB: ${POSTGRES_DBNAME}
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+    volumes:
+      - ./db_analytics:/var/lib/postgresql/data
+    ports:
+      - 5433:5432
+    networks:
+      - analytics
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "pg_isready",
+          "-q",
+          "-d",
+          "${POSTGRES_DBNAME}",
+          "-U",
+          "${POSTGRES_USER}",
+        ]
+      interval: 5s
+      timeout: 10s
+      retries: 5
+
+  db_metabase:
+    image: postgres:14
+    restart: on-failure
+    container_name: ${PROJECT_NAME}-postgres-metabase
+    env_file:
+      - .env
+    environment:
+      POSTGRES_DB: ${POSTGRES_METABASE_DBNAME}
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+    volumes:
+      - ./db_metabase:/var/lib/postgresql/data
+    networks:
+      - analytics
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "pg_isready",
+          "-q",
+          "-d",
+          "${POSTGRES_METABASE_DBNAME}",
+          "-U",
+          "${POSTGRES_USER}",
+        ]
+      interval: 5s
+      timeout: 10s
+      retries: 5
+
+  mageai:
     image: mageai/mageai:latest
-    command: mage start ${PROJECT_NAME}
+    command:
+      [
+        "./wait-for-it.sh",
+        "db_analytics:5432",
+        "--",
+        "mage",
+        "start",
+        "${PROJECT_NAME}",
+      ]
     env_file:
       - .env
     build:
@@ -14,7 +82,7 @@ services:
       POSTGRES_SCHEMA: ${POSTGRES_SCHEMA}
       POSTGRES_USER: ${POSTGRES_USER}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
-      POSTGRES_HOST: ${POSTGRES_HOST}
+      POSTGRES_HOST: db_analytics
       POSTGRES_PORT: ${POSTGRES_PORT}
     ports:
       - 6789:6789
@@ -22,15 +90,26 @@ services:
       - .:/home/src/
       - ~/Documents/secrets/personal-gcp.json:/home/src/personal-gcp.json
     restart: on-failure:5
-  postgres:
-    image: postgres:14
-    restart: on-failure
-    container_name: ${PROJECT_NAME}-postgres
-    env_file:
-      - .env
-    environment:
-      POSTGRES_DB: ${POSTGRES_DBNAME}
-      POSTGRES_USER: ${POSTGRES_USER}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+    depends_on:
+      - db_analytics
+    networks:
+      - analytics
+
+  metabase:
+    image: metabase/metabase
     ports:
-      - "${POSTGRES_PORT}:5432"
+      - "3000:3000"
+    environment:
+      MB_DB_TYPE: postgres
+      MB_DB_DBNAME: ${POSTGRES_METABASE_DBNAME}
+      MB_DB_USER: ${POSTGRES_USER}
+      MB_DB_PASS: ${POSTGRES_PASSWORD}
+      MB_DB_HOST: db_metabase
+    depends_on:
+      - db_metabase
+    networks:
+      - analytics
+
+networks:
+  analytics:
+    driver: bridge

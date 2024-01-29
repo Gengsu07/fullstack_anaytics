@@ -1,3 +1,9 @@
+db_analytics/*
+mage_data/*
+magic-zoomcamp
+db_metabase/
+keys
+
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]
